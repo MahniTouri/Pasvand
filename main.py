@@ -80,6 +80,7 @@ HTML_TEMPLATE = """
           <select id="mode" name="mode">
             <option value="suffix" {% if mode == "suffix" %}selected{% endif %}>Suffix</option>
             <option value="prefix" {% if mode == "prefix" %}selected{% endif %}>Prefix</option>
+            <option value="contains" {% if mode == "contains" %}selected{% endif %}>Contains</option>
           </select>
 
           <label for="text"><strong>Text:</strong></label>
@@ -88,7 +89,7 @@ HTML_TEMPLATE = """
             name="text"
             type="text"
             value="{{ text }}"
-            placeholder="e. g. آباد"
+            placeholder="e. g. ا or آباد"
             required
           >
           <button type="submit">Search</button>
@@ -96,9 +97,9 @@ HTML_TEMPLATE = """
       </form>
 
       <div class="info">
-        Search in Iran for
-        cities, towns, villages, hamlets, suburbs, quarters and neighbourhoods
-        containing this prefix or suffix.
+        Search in Iran for cities, towns, villages, hamlets, suburbs,
+        quarters and neighbourhoods whose names start with, end with,
+        or contain the entered text.
       </div>
 
       {% if error %}
@@ -171,8 +172,10 @@ def build_name_regex(text: str, mode: str) -> str:
         return f"^{escaped_text}"
     if mode == "suffix":
         return f"{escaped_text}$"
+    if mode == "contains":
+        return escaped_text
 
-    raise ValueError("Ungültiger Suchmodus. Erlaubt sind 'prefix' und 'suffix'.")
+    raise ValueError("Invalid search mode. Allowed: 'prefix', 'suffix', 'contains'.")
 
 
 def build_query(text: str, mode: str) -> str:
@@ -207,7 +210,7 @@ def run_overpass(text: str, mode: str) -> list[dict]:
         OVERPASS_URL,
         data={"data": query},
         timeout=300,
-        headers={"User-Agent": "osm-prefix-suffix-map/1.1"}
+        headers={"User-Agent": "osm-prefix-suffix-contains-map/1.2"}
     )
     response.raise_for_status()
 
@@ -242,7 +245,7 @@ def index():
     text = request.args.get("text", "").strip()
     mode = request.args.get("mode", "suffix").strip().lower()
 
-    if mode not in {"suffix", "prefix"}:
+    if mode not in {"suffix", "prefix", "contains"}:
         mode = "suffix"
 
     markers = []
@@ -254,11 +257,11 @@ def index():
         try:
             markers = run_overpass(text, mode)
         except requests.HTTPError as e:
-            error = f"HTTP-Fehler bei Overpass: {e}"
+            error = f"HTTP error from Overpass: {e}"
         except requests.RequestException as e:
-            error = f"Netzwerkfehler: {e}"
+            error = f"Network error: {e}"
         except Exception as e:
-            error = f"Unerwarteter Fehler: {e}"
+            error = f"Unexpected error: {e}"
 
     return render_template_string(
         HTML_TEMPLATE,
