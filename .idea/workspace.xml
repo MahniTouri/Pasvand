@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="764a36dd-7b69-4b12-a517-799ed7999d62" name="Changes" comment="Update Readme">
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-    </list>
+    <list default="true" id="764a36dd-7b69-4b12-a517-799ed7999d62" name="Changes" comment="Update Readme. Add containing strings" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -79,7 +77,7 @@
       <updated>1774185951284</updated>
       <workItem from="1774185952346" duration="1709000" />
       <workItem from="1774199236671" duration="1254000" />
-      <workItem from="1774203434778" duration="2338000" />
+      <workItem from="1774203434778" duration="2784000" />
     </task>
     <task id="LOCAL−00001" summary="Bugfix">
       <option name="closed" value="true" />
@@ -102,7 +100,14 @@
       <option name="presentableId" value="LOCAL−00003" />
       <updated>1774210560718</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL−00004" summary="Update Readme. Add containing strings">
+      <option name="closed" value="true" />
+      <created>1774211065934</created>
+      <option name="number" value="LOCAL−00004" />
+      <option name="presentableId" value="LOCAL−00004" />
+      <updated>1774211065934</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -112,7 +117,8 @@
     <MESSAGE value="Bugfix" />
     <MESSAGE value="Add feature for Prefix search" />
     <MESSAGE value="Update Readme" />
-    <option name="LAST_COMMIT_MESSAGE" value="Update Readme" />
+    <MESSAGE value="Update Readme. Add containing strings" />
+    <option name="LAST_COMMIT_MESSAGE" value="Update Readme. Add containing strings" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/Pasvand$main.coverage" NAME="main Coverage Results" MODIFIED="1774210809443" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

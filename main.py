@@ -1,4 +1,5 @@
 import json
+import re
 import threading
 import webbrowser
 
@@ -51,6 +52,13 @@ HTML_TEMPLATE = """
       font-size: 16px;
       min-width: 180px;
     }
+    .checkbox-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      white-space: nowrap;
+    }
     button {
       padding: 8px 14px;
       font-size: 16px;
@@ -68,6 +76,30 @@ HTML_TEMPLATE = """
     .error {
       color: #b00020;
       font-weight: bold;
+    }
+    .legend {
+      margin-top: 8px;
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-size: 14px;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .legend-match {
+      background: #d81b60;
+    }
+    .legend-nonmatch {
+      background: #666666;
     }
   </style>
 </head>
@@ -92,6 +124,18 @@ HTML_TEMPLATE = """
             placeholder="e. g. ا or آباد"
             required
           >
+
+          <label class="checkbox-wrap" for="show_non_matches">
+            <input
+              id="show_non_matches"
+              name="show_non_matches"
+              type="checkbox"
+              value="1"
+              {% if show_non_matches %}checked{% endif %}
+            >
+            Show non-matching places too
+          </label>
+
           <button type="submit">Search</button>
         </div>
       </form>
@@ -105,7 +149,26 @@ HTML_TEMPLATE = """
       {% if error %}
         <div class="info error">{{ error }}</div>
       {% elif searched %}
-        <div class="info">Places found: {{ count }}</div>
+        <div class="info">
+          Matching places: {{ match_count }}
+          {% if show_non_matches %}
+            | Non-matching places shown too: {{ non_match_count }}
+            | Total displayed: {{ total_count }}
+          {% endif %}
+        </div>
+
+        <div class="legend">
+          <span class="legend-item">
+            <span class="legend-dot legend-match"></span>
+            Matching
+          </span>
+          {% if show_non_matches %}
+          <span class="legend-item">
+            <span class="legend-dot legend-nonmatch"></span>
+            Non-matching
+          </span>
+          {% endif %}
+        </div>
       {% endif %}
     </div>
 
@@ -129,14 +192,20 @@ HTML_TEMPLATE = """
 
     if (markers.length > 0) {
       const bounds = [];
+
       for (const m of markers) {
         const marker = L.circleMarker([m.lat, m.lon], {
-          radius: 5
+          radius: m.matched ? 5 : 4,
+          color: m.matched ? '#d81b60' : '#666666',
+          fillColor: m.matched ? '#d81b60' : '#666666',
+          fillOpacity: m.matched ? 0.9 : 0.45,
+          weight: 1
         }).addTo(map);
 
         const popup = `
           <b>${m.name}</b><br>
           place: ${m.place}<br>
+          match: ${m.matched ? 'yes' : 'no'}<br>
           lat: ${m.lat}<br>
           lon: ${m.lon}
         `;
@@ -144,6 +213,7 @@ HTML_TEMPLATE = """
         marker.bindTooltip(m.name);
         bounds.push([m.lat, m.lon]);
       }
+
       map.fitBounds(bounds, { padding: [20, 20] });
     } else {
       map.setView([32.0, 53.0], 5);
@@ -178,7 +248,21 @@ def build_name_regex(text: str, mode: str) -> str:
     raise ValueError("Invalid search mode. Allowed: 'prefix', 'suffix', 'contains'.")
 
 
-def build_query(text: str, mode: str) -> str:
+def build_query(text: str, mode: str, show_non_matches: bool) -> str:
+    place_filter = '["place"~"^(city|town|village|hamlet|suburb|quarter|neighbourhood)$"]'
+
+    if show_non_matches:
+        return f"""
+[out:json][timeout:180];
+
+area["ISO3166-1"="IR"]["boundary"="administrative"]["admin_level"="2"]->.ir;
+
+node(area.ir)
+  {place_filter};
+
+out body;
+"""
+
     regex = build_name_regex(text, mode)
 
     return f"""
@@ -188,45 +272,59 @@ area["ISO3166-1"="IR"]["boundary"="administrative"]["admin_level"="2"]->.ir;
 
 (
   node(area.ir)
-    ["place"~"^(city|town|village|hamlet|suburb|quarter|neighbourhood)$"]
+    {place_filter}
     ["name"~"{regex}"];
 
   node(area.ir)
-    ["place"~"^(city|town|village|hamlet|suburb|quarter|neighbourhood)$"]
+    {place_filter}
     ["name:fa"~"{regex}"];
 
   node(area.ir)
-    ["place"~"^(city|town|village|hamlet|suburb|quarter|neighbourhood)$"]
+    {place_filter}
     ["name:ar"~"{regex}"];
 );
 out body;
 """
 
 
-def run_overpass(text: str, mode: str) -> list[dict]:
-    query = build_query(text, mode)
+def tags_match(tags: dict, pattern: re.Pattern) -> bool:
+    for key in ("name", "name:fa", "name:ar"):
+        value = tags.get(key)
+        if value and pattern.search(value):
+            return True
+    return False
+
+
+def run_overpass(text: str, mode: str, show_non_matches: bool) -> list[dict]:
+    query = build_query(text, mode, show_non_matches)
 
     response = requests.post(
         OVERPASS_URL,
         data={"data": query},
         timeout=300,
-        headers={"User-Agent": "osm-prefix-suffix-contains-map/1.2"}
+        headers={"User-Agent": "osm-prefix-suffix-contains-map/1.3"}
     )
     response.raise_for_status()
 
     data = response.json()
     elements = data.get("elements", [])
 
+    pattern = re.compile(build_name_regex(text, mode))
+
     results = []
     for el in elements:
         tags = el.get("tags", {})
-        name = tags.get("name") or tags.get("name:fa") or tags.get("name:ar") or "Ohne Namen"
+        name = tags.get("name") or tags.get("name:fa") or tags.get("name:ar") or "Unnamed"
+
+        matched = True if not show_non_matches else tags_match(tags, pattern)
+
         results.append({
             "id": el.get("id"),
             "name": name,
             "place": tags.get("place", ""),
             "lat": el.get("lat"),
             "lon": el.get("lon"),
+            "matched": matched,
         })
 
     seen = set()
@@ -244,6 +342,7 @@ def run_overpass(text: str, mode: str) -> list[dict]:
 def index():
     text = request.args.get("text", "").strip()
     mode = request.args.get("mode", "suffix").strip().lower()
+    show_non_matches = request.args.get("show_non_matches") == "1"
 
     if mode not in {"suffix", "prefix", "contains"}:
         mode = "suffix"
@@ -251,11 +350,15 @@ def index():
     markers = []
     error = None
     searched = False
+    match_count = 0
+    non_match_count = 0
 
     if text:
         searched = True
         try:
-            markers = run_overpass(text, mode)
+            markers = run_overpass(text, mode, show_non_matches)
+            match_count = sum(1 for m in markers if m["matched"])
+            non_match_count = sum(1 for m in markers if not m["matched"])
         except requests.HTTPError as e:
             error = f"HTTP error from Overpass: {e}"
         except requests.RequestException as e:
@@ -267,8 +370,11 @@ def index():
         HTML_TEMPLATE,
         text=text,
         mode=mode,
+        show_non_matches=show_non_matches,
         markers_json=json.dumps(markers, ensure_ascii=False),
-        count=len(markers),
+        match_count=match_count,
+        non_match_count=non_match_count,
+        total_count=len(markers),
         error=error,
         searched=searched,
     )
