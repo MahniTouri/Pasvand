@@ -83,7 +83,7 @@ HTML_TEMPLATE = """
             name="suffix"
             type="text"
             value="{{ suffix }}"
-            placeholder="z. B. آباد"
+            placeholder="e. g. آباد"
             required
           >
           <button type="submit">Search</button>
@@ -99,7 +99,7 @@ HTML_TEMPLATE = """
       {% if error %}
         <div class="info error">{{ error }}</div>
       {% elif searched %}
-        <div class="info">Treffer: {{ count }}</div>
+        <div class="info">Places found: {{ count }}</div>
       {% endif %}
     </div>
 
@@ -246,3 +246,10 @@ def index():
         error=error,
         searched=searched,
     )
+def open_browser():
+    webbrowser.open("http://127.0.0.1:5000/")
+
+
+if __name__ == "__main__":
+    threading.Timer(1.0, open_browser).start()
+    app.run(host="127.0.0.1", port=5000, debug=False)
