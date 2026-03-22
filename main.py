@@ -1,7 +1,6 @@
 import json
 import threading
 import webbrowser
-from html import escape
 
 import requests
 from flask import Flask, request, render_template_string
@@ -15,7 +14,7 @@ HTML_TEMPLATE = """
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>OSM Suffix search Iran</title>
+  <title>OSM Pas o Pishvand Iran</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <link
@@ -47,10 +46,10 @@ HTML_TEMPLATE = """
       flex-wrap: wrap;
       align-items: center;
     }
-    input[type="text"] {
+    input[type="text"], select {
       padding: 8px;
       font-size: 16px;
-      min-width: 280px;
+      min-width: 180px;
     }
     button {
       padding: 8px 14px;
@@ -77,12 +76,18 @@ HTML_TEMPLATE = """
     <div class="topbar">
       <form method="get" action="/">
         <div class="form-row">
-          <label for="suffix"><strong>Suffix:</strong></label>
+          <label for="mode"><strong>Search for:</strong></label>
+          <select id="mode" name="mode">
+            <option value="suffix" {% if mode == "suffix" %}selected{% endif %}>Suffix</option>
+            <option value="prefix" {% if mode == "prefix" %}selected{% endif %}>Prefix</option>
+          </select>
+
+          <label for="text"><strong>Text:</strong></label>
           <input
-            id="suffix"
-            name="suffix"
+            id="text"
+            name="text"
             type="text"
-            value="{{ suffix }}"
+            value="{{ text }}"
             placeholder="e. g. آباد"
             required
           >
@@ -92,8 +97,8 @@ HTML_TEMPLATE = """
 
       <div class="info">
         Search in Iran for
-        cities, towns, villages, hamlets, suburbs, quarters, and neighbourhoods,
-        ending with this suffix.
+        cities, towns, villages, hamlets, suburbs, quarters and neighbourhoods
+        containing this prefix or suffix.
       </div>
 
       {% if error %}
@@ -159,8 +164,20 @@ def escape_overpass_regex(text: str) -> str:
     return "".join(escaped)
 
 
-def build_query_for_suffix(suffix: str) -> str:
-    escaped_suffix = escape_overpass_regex(suffix)
+def build_name_regex(text: str, mode: str) -> str:
+    escaped_text = escape_overpass_regex(text)
+
+    if mode == "prefix":
+        return f"^{escaped_text}"
+    if mode == "suffix":
+        return f"{escaped_text}$"
+
+    raise ValueError("Ungültiger Suchmodus. Erlaubt sind 'prefix' und 'suffix'.")
+
+
+def build_query(text: str, mode: str) -> str:
+    regex = build_name_regex(text, mode)
+
     return f"""
 [out:json][timeout:180];
 
@@ -169,28 +186,28 @@ area["ISO3166-1"="IR"]["boundary"="administrative"]["admin_level"="2"]->.ir;
 (
   node(area.ir)
     ["place"~"^(city|town|village|hamlet|suburb|quarter|neighbourhood)$"]
-    ["name"~"{escaped_suffix}$"];
+    ["name"~"{regex}"];
 
   node(area.ir)
     ["place"~"^(city|town|village|hamlet|suburb|quarter|neighbourhood)$"]
-    ["name:fa"~"{escaped_suffix}$"];
+    ["name:fa"~"{regex}"];
 
   node(area.ir)
     ["place"~"^(city|town|village|hamlet|suburb|quarter|neighbourhood)$"]
-    ["name:ar"~"{escaped_suffix}$"];
+    ["name:ar"~"{regex}"];
 );
 out body;
 """
 
 
-def run_overpass(suffix: str) -> list[dict]:
-    query = build_query_for_suffix(suffix)
+def run_overpass(text: str, mode: str) -> list[dict]:
+    query = build_query(text, mode)
 
     response = requests.post(
         OVERPASS_URL,
         data={"data": query},
         timeout=300,
-        headers={"User-Agent": "osm-suffix-map/1.0"}
+        headers={"User-Agent": "osm-prefix-suffix-map/1.1"}
     )
     response.raise_for_status()
 
@@ -222,15 +239,20 @@ def run_overpass(suffix: str) -> list[dict]:
 
 @app.route("/", methods=["GET"])
 def index():
-    suffix = request.args.get("suffix", "").strip()
+    text = request.args.get("text", "").strip()
+    mode = request.args.get("mode", "suffix").strip().lower()
+
+    if mode not in {"suffix", "prefix"}:
+        mode = "suffix"
+
     markers = []
     error = None
     searched = False
 
-    if suffix:
+    if text:
         searched = True
         try:
-            markers = run_overpass(suffix)
+            markers = run_overpass(text, mode)
         except requests.HTTPError as e:
             error = f"HTTP-Fehler bei Overpass: {e}"
         except requests.RequestException as e:
@@ -240,12 +262,15 @@ def index():
 
     return render_template_string(
         HTML_TEMPLATE,
-        suffix=escape(suffix),
+        text=text,
+        mode=mode,
         markers_json=json.dumps(markers, ensure_ascii=False),
         count=len(markers),
         error=error,
         searched=searched,
     )
+
+
 def open_browser():
     webbrowser.open("http://127.0.0.1:5000/")
 
