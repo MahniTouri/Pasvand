@@ -31,27 +31,32 @@ HTML_TEMPLATE = """
       margin: 0;
       font-family: Arial, sans-serif;
     }
+
     .container {
       display: flex;
       flex-direction: column;
       height: 100%;
     }
+
     .topbar {
       padding: 12px;
       border-bottom: 1px solid #ccc;
       background: #f8f8f8;
     }
+
     .form-row {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
       align-items: center;
     }
+
     input[type="text"], select {
       padding: 8px;
       font-size: 16px;
       min-width: 180px;
     }
+
     .checkbox-wrap {
       display: inline-flex;
       align-items: center;
@@ -59,24 +64,29 @@ HTML_TEMPLATE = """
       font-size: 14px;
       white-space: nowrap;
     }
+
     button {
       padding: 8px 14px;
       font-size: 16px;
       cursor: pointer;
     }
+
     .info {
       margin-top: 8px;
       font-size: 14px;
       color: #333;
     }
+
     #map {
       flex: 1;
       min-height: 500px;
     }
+
     .error {
       color: #b00020;
       font-weight: bold;
     }
+
     .legend {
       margin-top: 8px;
       display: flex;
@@ -84,22 +94,40 @@ HTML_TEMPLATE = """
       flex-wrap: wrap;
       font-size: 14px;
     }
+
     .legend-item {
       display: inline-flex;
       align-items: center;
       gap: 6px;
     }
+
     .legend-dot {
       width: 12px;
       height: 12px;
       border-radius: 50%;
       display: inline-block;
     }
+
     .legend-match {
       background: #d81b60;
     }
+
     .legend-nonmatch {
       background: #666666;
+    }
+
+    /* Fullscreen mode: show only the map */
+    body.fullscreen-mode .topbar {
+      display: none;
+    }
+
+    body.fullscreen-mode .container {
+      height: 100vh;
+    }
+
+    body.fullscreen-mode #map {
+      min-height: 100vh;
+      height: 100vh;
     }
   </style>
 </head>
@@ -218,6 +246,28 @@ HTML_TEMPLATE = """
     } else {
       map.setView([32.0, 53.0], 5);
     }
+
+    function isFullscreenActive() {
+      return !!document.fullscreenElement ||
+             (window.innerHeight === screen.height && window.innerWidth === screen.width);
+    }
+
+    function updateFullscreenLayout() {
+      if (isFullscreenActive()) {
+        document.body.classList.add('fullscreen-mode');
+      } else {
+        document.body.classList.remove('fullscreen-mode');
+      }
+
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 100);
+    }
+
+    document.addEventListener('fullscreenchange', updateFullscreenLayout);
+    window.addEventListener('resize', updateFullscreenLayout);
+
+    updateFullscreenLayout();
   </script>
 </body>
 </html>
