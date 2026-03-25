@@ -2,13 +2,14 @@ import json
 import re
 import threading
 import webbrowser
+from pathlib import Path
 
-import requests
 from flask import Flask, request, render_template_string
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-
 app = Flask(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent
+LOCAL_JSON_FILE = BASE_DIR / "cities.json"
 
 HTML_TEMPLATE = """
 <!doctype html>
@@ -116,7 +117,6 @@ HTML_TEMPLATE = """
       background: #666666;
     }
 
-    /* Fullscreen mode: show only the map */
     body.fullscreen-mode .topbar {
       display: none;
     }
@@ -172,6 +172,10 @@ HTML_TEMPLATE = """
         Search in Iran for cities, towns, villages, hamlets, suburbs,
         quarters and neighbourhoods whose names start with, end with,
         or contain the entered text.
+      </div>
+
+      <div class="info">
+        Data source: local JSON file: <code>{{ local_file }}</code>
       </div>
 
       {% if error %}
@@ -274,7 +278,19 @@ HTML_TEMPLATE = """
 """
 
 
+PLACE_VALUES = {
+    "city",
+    "town",
+    "village",
+    "hamlet",
+    "suburb",
+    "quarter",
+    "neighbourhood",
+}
+
+
 def escape_overpass_regex(text: str) -> str:
+    # Kann weiterhin genutzt werden, weil wir ebenfalls Regex verwenden.
     special_chars = r'\\.^$|?*+()[]{}'
     escaped = []
     for ch in text:
@@ -298,45 +314,6 @@ def build_name_regex(text: str, mode: str) -> str:
     raise ValueError("Invalid search mode. Allowed: 'prefix', 'suffix', 'contains'.")
 
 
-def build_query(text: str, mode: str, show_non_matches: bool) -> str:
-    place_filter = '["place"~"^(city|town|village|hamlet|suburb|quarter|neighbourhood)$"]'
-
-    if show_non_matches:
-        return f"""
-[out:json][timeout:180];
-
-area["ISO3166-1"="IR"]["boundary"="administrative"]["admin_level"="2"]->.ir;
-
-node(area.ir)
-  {place_filter};
-
-out body;
-"""
-
-    regex = build_name_regex(text, mode)
-
-    return f"""
-[out:json][timeout:180];
-
-area["ISO3166-1"="IR"]["boundary"="administrative"]["admin_level"="2"]->.ir;
-
-(
-  node(area.ir)
-    {place_filter}
-    ["name"~"{regex}"];
-
-  node(area.ir)
-    {place_filter}
-    ["name:fa"~"{regex}"];
-
-  node(area.ir)
-    {place_filter}
-    ["name:ar"~"{regex}"];
-);
-out body;
-"""
-
-
 def tags_match(tags: dict, pattern: re.Pattern) -> bool:
     for key in ("name", "name:fa", "name:ar"):
         value = tags.get(key)
@@ -345,35 +322,56 @@ def tags_match(tags: dict, pattern: re.Pattern) -> bool:
     return False
 
 
-def run_overpass(text: str, mode: str, show_non_matches: bool) -> list[dict]:
-    query = build_query(text, mode, show_non_matches)
+def load_local_elements() -> list[dict]:
+    if not LOCAL_JSON_FILE.exists():
+        raise FileNotFoundError(
+            f"JSON file not found: {LOCAL_JSON_FILE.name}"
+        )
 
-    response = requests.post(
-        OVERPASS_URL,
-        data={"data": query},
-        timeout=300,
-        headers={"User-Agent": "osm-prefix-suffix-contains-map/1.3"}
-    )
-    response.raise_for_status()
+    with LOCAL_JSON_FILE.open("r", encoding="utf-8") as f:
+        data = json.load(f)
 
-    data = response.json()
-    elements = data.get("elements", [])
+    elements = data.get("elements")
+    if not isinstance(elements, list):
+        raise ValueError("The JSON file has no valid 'elements' list.")
 
+    return elements
+
+
+def run_local_search(text: str, mode: str, show_non_matches: bool) -> list[dict]:
+    elements = load_local_elements()
     pattern = re.compile(build_name_regex(text, mode))
 
     results = []
-    for el in elements:
-        tags = el.get("tags", {})
-        name = tags.get("name") or tags.get("name:fa") or tags.get("name:ar") or "Unnamed"
 
-        matched = True if not show_non_matches else tags_match(tags, pattern)
+    for el in elements:
+        if el.get("type") != "node":
+            continue
+
+        tags = el.get("tags", {})
+        place = tags.get("place", "")
+
+        if place not in PLACE_VALUES:
+            continue
+
+        lat = el.get("lat")
+        lon = el.get("lon")
+        if lat is None or lon is None:
+            continue
+
+        matched = tags_match(tags, pattern)
+
+        if not show_non_matches and not matched:
+            continue
+
+        name = tags.get("name") or tags.get("name:fa") or tags.get("name:ar") or "Unnamed"
 
         results.append({
             "id": el.get("id"),
             "name": name,
-            "place": tags.get("place", ""),
-            "lat": el.get("lat"),
-            "lon": el.get("lon"),
+            "place": place,
+            "lat": lat,
+            "lon": lon,
             "matched": matched,
         })
 
@@ -406,13 +404,13 @@ def index():
     if text:
         searched = True
         try:
-            markers = run_overpass(text, mode, show_non_matches)
+            markers = run_local_search(text, mode, show_non_matches)
             match_count = sum(1 for m in markers if m["matched"])
             non_match_count = sum(1 for m in markers if not m["matched"])
-        except requests.HTTPError as e:
-            error = f"HTTP error from Overpass: {e}"
-        except requests.RequestException as e:
-            error = f"Network error: {e}"
+        except FileNotFoundError as e:
+            error = str(e)
+        except json.JSONDecodeError as e:
+            error = f"Invalid JSON file: {e}"
         except Exception as e:
             error = f"Unexpected error: {e}"
 
@@ -427,6 +425,7 @@ def index():
         total_count=len(markers),
         error=error,
         searched=searched,
+        local_file=LOCAL_JSON_FILE.name,
     )
 
 
